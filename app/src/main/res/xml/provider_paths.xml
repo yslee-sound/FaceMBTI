@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- cache 디렉토리 공유 허용 (촬영 이미지를 cacheDir에 저장) -->
+    <cache-path name="cache" path="." />
+    <!-- files 디렉토리도 필요 시 사용 가능 -->
+    <files-path name="files" path="." />
+</paths>
+
