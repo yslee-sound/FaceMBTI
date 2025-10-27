@@ -17,11 +17,30 @@ fun AppNav() {
             CameraMainScreen(
                 onCaptured = { file ->
                     val path = Uri.encode(file.absolutePath)
-                    nav.navigate("analyzing?path=$path")
+                    // 변경: 촬영 후 미리보기 화면으로 이동
+                    nav.navigate("preview?path=$path")
                 },
                 onHistoryClick = { record ->
                     val encoded = Uri.encode(record.imagePath)
                     nav.navigate("result?type=${record.result.type}&score=${record.result.score}&path=$encoded")
+                }
+            )
+        }
+        // 새로 추가: 미리보기 화면
+        composable(
+            route = "preview?path={path}",
+            arguments = listOf(
+                navArgument("path") { type = NavType.StringType; nullable = false }
+            )
+        ) { backStackEntry ->
+            val path = backStackEntry.arguments?.getString("path")!!
+            val decoded = Uri.decode(path)
+            PreviewScreen(
+                imagePath = decoded,
+                onBack = { nav.popBackStack() },
+                onAnalyzeClick = { p ->
+                    val encoded = Uri.encode(p)
+                    nav.navigate("analyzing?path=$encoded")
                 }
             )
         }
@@ -38,13 +57,12 @@ fun AppNav() {
                     val decodedPath = Uri.decode(path)
                     // 분석 완료 시 히스토리에 추가
                     runCatching { AnalysisHistoryRepository.add(File(decodedPath), result) }
-                    // 결과 화면으로 이동
+                    // 결과 화면으로 이동: 분석 화면은 제거하고, 미리보기는 유지
                     val type = result.type
                     val score = result.score
                     val p = Uri.encode(decodedPath)
-                    nav.navigate("result?type=$type&score=$score&path=$p") {
-                        popUpTo("home") { inclusive = false }
-                    }
+                    nav.popBackStack() // analyzing 제거
+                    nav.navigate("result?type=$type&score=$score&path=$p")
                 },
                 onBack = { nav.popBackStack() }
             )

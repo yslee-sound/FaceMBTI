@@ -10,6 +10,7 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.view.CameraController
 import androidx.camera.view.LifecycleCameraController
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
@@ -37,6 +38,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.content.PermissionChecker
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
 import java.io.File
 
 @Composable
@@ -72,14 +76,8 @@ fun CameraMainScreen(
     // 최근 분석 히스토리
     val history by AnalysisHistoryRepository.history.collectAsState()
 
-    // 마지막 촬영 썸네일(갤러리 저장 없이 캐시 기준)
-    var lastShotPath by remember { mutableStateOf<String?>(null) }
-    val lastShotBitmap by remember(lastShotPath, history) {
-        mutableStateOf(
-            lastShotPath?.let { p -> BitmapFactory.decodeFile(p)?.asImageBitmap() }
-                ?: history.firstOrNull()?.let { BitmapFactory.decodeFile(it.imagePath)?.asImageBitmap() }
-        )
-    }
+    // 가이드 표시 여부
+    var showGuide by remember { mutableStateOf(true) }
 
     fun takePhoto() {
         val photoFile = File(context.cacheDir, "shot_${System.currentTimeMillis()}.jpg")
@@ -89,7 +87,6 @@ fun CameraMainScreen(
             ContextCompat.getMainExecutor(context),
             object : ImageCapture.OnImageSavedCallback {
                 override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                    lastShotPath = photoFile.absolutePath
                     onCaptured(photoFile)
                 }
                 override fun onError(exception: ImageCaptureException) {
@@ -124,6 +121,30 @@ fun CameraMainScreen(
                         text = "카메라 권한이 필요합니다",
                         color = Color.White,
                         modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+
+                // 얼굴 정렬 가이드 오버레이 + 토글
+                // AndroidView 위에 겹쳐서 그립니다.
+                if (showGuide && hasCameraPermission) {
+                    FaceGuideOverlay(modifier = Modifier.matchParentSize())
+                    FaceGuideTips(modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(12.dp))
+                }
+                Surface(
+                    onClick = { showGuide = !showGuide },
+                    color = Color(0x66000000),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        text = if (showGuide) "가이드 끄기" else "가이드 켜기",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
                     )
                 }
             }
@@ -172,7 +193,7 @@ fun CameraMainScreen(
                 HorizontalDivider(color = Color(0x22334455))
                 Spacer(Modifier.height(10.dp))
 
-                // 촬영 라벨 + 버튼(두꺼운 링) + 좌측 썸네일
+                // 촬영 라벨 + 버튼(두꺼운 링) (좌측 썸네일 제거)
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -182,47 +203,94 @@ fun CameraMainScreen(
                     Text(text = "촬영", color = Color(0xFFCAD2DC))
                     Spacer(Modifier.height(8.dp))
 
+                    // 가운데 촬영 버튼만 표시
                     Row(
                         modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // 왼쪽 정사각형 썸네일 버튼
-                        val thumbSize = 112.dp
-                        Box(
+                        Surface(
                             modifier = Modifier
-                                .size(thumbSize)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color(0xFF0B0E14))
-                                .clickable {
-                                    // 가장 최근 기록 열기
-                                    history.firstOrNull()?.let { onHistoryClick(it) }
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (lastShotBitmap != null) {
-                                Image(bitmap = lastShotBitmap!!, contentDescription = null)
-                            }
-                        }
-
-                        // 가운데 촬영 링을 정확히 중앙에 배치하기 위한 가변 공간
-                        Box(modifier = Modifier.weight(1f)) {
-                            Surface(
-                                modifier = Modifier
-                                    .size(86.dp)
-                                    .align(Alignment.Center)
-                                    .clip(CircleShape)
-                                    .clickable { takePhoto() },
-                                shape = CircleShape,
-                                color = Color.Transparent,
-                                border = BorderStroke(4.dp, Color(0xFF27C7A8))
-                            ) {}
-                        }
-
-                        // 오른쪽은 왼쪽 썸네일과 동일한 폭의 빈 공간으로 균형 유지
-                        Spacer(modifier = Modifier.size(thumbSize))
+                                .size(86.dp)
+                                .clip(CircleShape)
+                                .clickable { takePhoto() },
+                            shape = CircleShape,
+                            color = Color.Transparent,
+                            border = BorderStroke(4.dp, Color(0xFF27C7A8))
+                        ) {}
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun FaceGuideOverlay(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        // 얼굴 타원 영역 (중앙, 화면 대비 비율)
+        val ovalW = w * 0.6f
+        val ovalH = h * 0.45f
+        val left = (w - ovalW) / 2f
+        val top = (h - ovalH) / 2f
+        // 타원 테두리
+        drawOval(
+            color = Color.White.copy(alpha = 0.75f),
+            topLeft = Offset(left, top),
+            size = Size(ovalW, ovalH),
+            style = Stroke(width = 3.dp.toPx())
+        )
+        // 눈 높이 가이드 (타원 상단에서 0.4 비율 지점)
+        val eyeY = top + ovalH * 0.4f
+        drawLine(
+            color = Color.White.copy(alpha = 0.35f),
+            start = Offset(left + 20.dp.toPx(), eyeY),
+            end = Offset(left + ovalW - 20.dp.toPx(), eyeY),
+            strokeWidth = 2.dp.toPx()
+        )
+        // 수직 중심선
+        val cx = w / 2f
+        drawLine(
+            color = Color.White.copy(alpha = 0.25f),
+            start = Offset(cx, top + 12.dp.toPx()),
+            end = Offset(cx, top + ovalH - 12.dp.toPx()),
+            strokeWidth = 1.5.dp.toPx()
+        )
+        // 모서리 L자 가이드 (얼굴 프레이밍 참고용)
+        val corner = 26.dp.toPx()
+        val stroke = 3.dp.toPx()
+        val rectLeft = left - 24.dp.toPx()
+        val rectTop = top - 24.dp.toPx()
+        val rectRight = left + ovalW + 24.dp.toPx()
+        val rectBottom = top + ovalH + 24.dp.toPx()
+        // 좌상
+        drawLine(Color.White.copy(alpha = 0.4f), Offset(rectLeft, rectTop), Offset(rectLeft + corner, rectTop), stroke)
+        drawLine(Color.White.copy(alpha = 0.4f), Offset(rectLeft, rectTop), Offset(rectLeft, rectTop + corner), stroke)
+        // 우상
+        drawLine(Color.White.copy(alpha = 0.4f), Offset(rectRight - corner, rectTop), Offset(rectRight, rectTop), stroke)
+        drawLine(Color.White.copy(alpha = 0.4f), Offset(rectRight, rectTop), Offset(rectRight, rectTop + corner), stroke)
+        // 좌하
+        drawLine(Color.White.copy(alpha = 0.4f), Offset(rectLeft, rectBottom - corner), Offset(rectLeft, rectBottom), stroke)
+        drawLine(Color.White.copy(alpha = 0.4f), Offset(rectLeft, rectBottom), Offset(rectLeft + corner, rectBottom), stroke)
+        // 우하
+        drawLine(Color.White.copy(alpha = 0.4f), Offset(rectRight, rectBottom - corner), Offset(rectRight, rectBottom), stroke)
+        drawLine(Color.White.copy(alpha = 0.4f), Offset(rectRight - corner, rectBottom), Offset(rectRight, rectBottom), stroke)
+    }
+}
+
+@Composable
+private fun FaceGuideTips(modifier: Modifier = Modifier) {
+    Surface(
+        color = Color(0x66000000),
+        shape = RoundedCornerShape(12.dp),
+        modifier = modifier
+    ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(text = "정면을 바라보고 타원 안에 얼굴을 맞춰주세요", color = Color.White, fontSize = 13.sp)
+            Spacer(Modifier.height(4.dp))
+            Text(text = "밝은 곳에서 배경 단순, 안경/모자는 벗어주세요", color = Color(0xFFCAD2DC), fontSize = 12.sp)
         }
     }
 }
