@@ -2,4 +2,12 @@
 <resources>
 
     <style name="Theme.FaceMBTI" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <style name="Theme.FaceMBTI.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_logo</item>
+        <!-- 필요 시 아이콘 배경이 도드라지는 기기에서 투명 처리 -->
+        <!-- <item name="windowSplashScreenIconBackgroundColor">@android:color/transparent</item> -->
+        <item name="postSplashScreenTheme">@style/Theme.FaceMBTI</item>
+    </style>
 </resources>
